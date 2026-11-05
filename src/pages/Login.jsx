@@ -3,10 +3,13 @@ import { Link, useNavigate } from "react-router-dom";
 import { Mail, Lock } from "lucide-react";
 import AuthLayout from "../components/AuthLayout";
 import InputField from "../components/InputField";
+import { useDispatch } from "react-redux";
 import api from "../services/api";
+import { loginSuccess } from "../store/AuthSlice";
 
 function Login() {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -20,8 +23,7 @@ function Login() {
     setLoading(true);
     try {
       const { data } = await api.post("/auth/login", form);
-      localStorage.setItem("token", data.token);
-      localStorage.setItem("user", JSON.stringify(data.user));
+      dispatch(loginSuccess({ token: data.token, user: data.user }));
       navigate("/home");
     } catch (err) {
       setError(err.response?.data?.message || "Could not reach the server. Is it running?");

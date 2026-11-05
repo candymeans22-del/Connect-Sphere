@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { X, Globe, Users, Lock } from "lucide-react";
+import { X, Globe, Users, Lock, ImagePlus } from "lucide-react";
 import api from "../services/api";
 import Avatar from "./Avatar";
 
@@ -11,12 +11,17 @@ const visibilities = [
   { value: "private", label: "Only me", Icon: Lock },
 ];
 
-function CreatePostModal({ open, onClose, onCreated, user }) {
+const MAX_IMAGE_MB = 2;
+
+// localOnly = true means the server is not connected, so the post is only created on this page
+function CreatePostModal({ open, onClose, onCreated, user, localOnly = false }) {
   const [text, setText] = useState("");
   const [tag, setTag] = useState("General");
   const [visibility, setVisibility] = useState("public");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [image, setImage] = useState(""); // the chosen picture as a data URL
+  const fileRef = useRef(null);
 
   // Close with the Escape key
   useEffect(() => {
@@ -25,6 +30,29 @@ function CreatePostModal({ open, onClose, onCreated, user }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+
+  // Read the chosen picture so we can show a preview
+  const handleImage = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Please choose an image file");
+      return;
+    }
+    if (file.size > MAX_IMAGE_MB * 1024 * 1024) {
+      setError(`Image must be smaller than ${MAX_IMAGE_MB} MB`);
+      return;
+    }
+    setError("");
+    const reader = new FileReader();
+    reader.onload = () => setImage(reader.result);
+    reader.readAsDataURL(file);
+  };
+
+  const removeImage = () => {
+    setImage("");
+    if (fileRef.current) fileRef.current.value = "";
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -35,11 +63,30 @@ function CreatePostModal({ open, onClose, onCreated, user }) {
     setError("");
     setLoading(true);
     try {
-      const { data } = await api.post("/posts", { text, tag, visibility });
-      onCreated(data.post);
+      let post;
+      if (localOnly) {
+        // No backend yet: build the post here so you can see it in the feed
+        post = {
+          _id: `sample-${Date.now()}`,
+          author: { _id: user._id, name: user.name, username: user.username },
+          text,
+          tag,
+          visibility,
+          image,
+          likes: 0,
+          likedByMe: false,
+          commentsCount: 0,
+          createdAt: new Date().toISOString(),
+        };
+      } else {
+        const { data } = await api.post("/posts", { text, tag, visibility, image });
+        post = data.post;
+      }
+      onCreated(post);
       setText("");
       setTag("General");
       setVisibility("public");
+      removeImage();
       onClose();
     } catch (err) {
       setError(err.response?.data?.message || "Could not reach the server. Is it running?");
@@ -61,7 +108,7 @@ function CreatePostModal({ open, onClose, onCreated, user }) {
           <motion.form
             onClick={(e) => e.stopPropagation()}
             onSubmit={handleSubmit}
-            className="w-full max-w-lg rounded-[2rem] bg-white p-6 shadow-2xl"
+            className="w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-[2rem] bg-white p-6 shadow-2xl"
             initial={{ opacity: 0, y: 40, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 40, scale: 0.95 }}
@@ -91,6 +138,34 @@ function CreatePostModal({ open, onClose, onCreated, user }) {
               className="mt-4 w-full resize-none rounded-3xl bg-surface p-4 text-sm outline-none focus:ring-2 focus:ring-primary-soft"
             />
             <p className="mt-1 text-right text-xs text-muted">{text.length}/1000</p>
+
+            {image ? (
+              <div className="relative mt-3 overflow-hidden rounded-3xl">
+                <img src={image} alt="Preview" className="max-h-60 w-full object-cover" />
+                <button
+                  type="button"
+                  onClick={removeImage}
+                  className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 shadow"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="mt-3 flex items-center gap-2 rounded-full bg-surface px-4 py-2 text-sm font-semibold text-primary-deep"
+              >
+                <ImagePlus size={16} /> Add photo
+              </button>
+            )}
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              onChange={handleImage}
+              className="hidden"
+            />
 
             <p className="mt-3 text-xs font-semibold text-muted">Topic</p>
             <div className="mt-2 flex flex-wrap gap-2">

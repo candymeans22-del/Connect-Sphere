@@ -1,10 +1,12 @@
+import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Home, Compass, Users, MessageCircle, Bell, User, Settings, LogOut } from "lucide-react";
+import { Home, Compass, Clapperboard, Users, MessageCircle, Bell, User, Settings, LogOut } from "lucide-react";
 import Avatar from "./Avatar";
 
 const links = [
   { label: "Home", Icon: Home },
   { label: "Explore", Icon: Compass },
+  { label: "Reels", Icon: Clapperboard },
   { label: "Communities", Icon: Users },
   { label: "Messages", Icon: MessageCircle, badge: 3 },
   { label: "Notifications", Icon: Bell, badge: 5 },
@@ -13,6 +15,8 @@ const links = [
 ];
 
 function Sidebar({ user, onLogout, active = "Home", guest = false, onLogin }) {
+  const navigate = useNavigate();
+
   return (
     <aside className="hidden lg:flex self-start sticky top-4 h-[calc(100vh-2rem)] flex-col glass rounded-[2rem] p-5">
       <div className="flex items-center gap-2 px-2">
@@ -27,6 +31,16 @@ function Sidebar({ user, onLogout, active = "Home", guest = false, onLogin }) {
             <motion.button
               key={label}
               whileHover={{ x: 4 }}
+              onClick={() => {
+                if (label === "Home") navigate("/home");
+                if (label === "Explore") navigate("/explore");
+                if (label === "Reels") navigate("/reels");
+                if (label === "Communities") navigate("/communities");
+                if (label === "Messages") navigate("/chat");
+                if (label === "Notifications") navigate("/notifications");
+                if (label === "Settings") navigate("/settings");
+                if (label === "Profile") navigate(`/profile/${user?.username || "guest"}`);
+              }}
               className={`flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium text-left transition ${
                 isActive
                   ? "bg-linear-to-r from-primary to-primary-soft text-white shadow-lg"

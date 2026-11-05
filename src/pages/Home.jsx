@@ -12,9 +12,14 @@ import RightPanel from "../components/RightPanel";
 import BottomNav from "../components/BottomNav";
 import CreatePostModal from "../components/CreatePostModal";
 import LoginPrompt from "../components/LoginPrompt";
-import { isGuest, getSamplePosts } from "../utils/guest";
+import { getSamplePosts } from "../utils/guest";
+import useAuth from "../hooks/useAuth";
 
 const tabs = ["For you", "Study", "Tips", "Travel"];
+
+// While the backend is not ready, show sample posts when the server cannot be reached.
+// Set this to false when the backend is connected and you want to see the real error.
+const SHOW_SAMPLE_IF_OFFLINE = true;
 
 const meshStyle = {
   backgroundColor: "#E7EDF9",
@@ -23,30 +28,21 @@ const meshStyle = {
   backgroundAttachment: "fixed",
 };
 
-function getUser() {
-  try {
-    return JSON.parse(localStorage.getItem("user")) || {};
-  } catch {
-    return {};
-  }
-}
-
 function Home() {
   const navigate = useNavigate();
-  const guest = isGuest(); // no token = visitor who did not login
-  const user = guest ? { name: "Guest", username: "guest" } : getUser();
+  const { guest, user, logout } = useAuth();
 
   const [tab, setTab] = useState("For you");
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(!guest);
   const [error, setError] = useState("");
+  const [offline, setOffline] = useState(false); // true = showing sample posts because the server is down
   const [reloadKey, setReloadKey] = useState(0);
   const [showCreate, setShowCreate] = useState(false);
   const [prompt, setPrompt] = useState(""); // "Login to ..." message for guests
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
+    logout();
     navigate("/");
   };
 
@@ -66,6 +62,7 @@ function Home() {
     async function load() {
       setLoading(true);
       setError("");
+      setOffline(false);
       try {
         const { data } = await api.get("/posts", {
           params: tab === "For you" ? {} : { tag: tab },
@@ -73,12 +70,24 @@ function Home() {
         if (!cancelled) setPosts(data.posts);
       } catch (err) {
         if (err.response?.status === 401) {
-          localStorage.removeItem("token");
-          localStorage.removeItem("user");
+          logout();
           navigate("/login");
           return;
         }
-        if (!cancelled) setError("Could not load posts. Is the server running?");
+        if (!cancelled) {
+          if (SHOW_SAMPLE_IF_OFFLINE) {
+            // Make the first sample post yours so you can try Edit and Delete
+            const sample = getSamplePosts(tab).map((post, i) =>
+              i === 0
+                ? { ...post, author: { _id: user._id, name: user.name, username: user.username } }
+                : post
+            );
+            setPosts(sample);
+            setOffline(true);
+          } else {
+            setError("Could not load posts. Is the server running?");
+          }
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -88,7 +97,7 @@ function Home() {
     return () => {
       cancelled = true;
     };
-  }, [tab, reloadKey, navigate, guest]);
+  }, [tab, reloadKey, navigate, guest, logout]);
 
   const handlePostCreated = (post) => {
     if (tab === "For you" || tab === post.tag) {
@@ -118,7 +127,10 @@ function Home() {
                 className="bg-transparent outline-none text-sm w-full"
               />
             </div>
-            <button className="glass relative w-12 h-12 rounded-full flex items-center justify-center">
+            <button
+              onClick={() => navigate("/notifications")}
+              className="glass relative w-12 h-12 rounded-full flex items-center justify-center"
+            >
               <Bell size={19} />
               <span className="absolute top-3 right-3.5 w-2.5 h-2.5 rounded-full bg-rose border-2 border-white" />
             </button>
@@ -196,6 +208,12 @@ function Home() {
               </>
             )}
 
+            {!loading && offline && (
+              <div className="glass rounded-3xl px-5 py-3 text-center text-sm text-primary-deep">
+                Backend not connected. Showing sample posts for now.
+              </div>
+            )}
+
             {!loading && error && (
               <div className="glass rounded-3xl p-8 text-center">
                 <p className="text-rose-deep">{error}</p>
@@ -240,7 +258,7 @@ function Home() {
         <RightPanel />
       </div>
 
-      <BottomNav active={0} onPlus={openCreate} />
+      <BottomNav active={0} onPlus={openCreate} username={user.username} />
 
       <LoginPrompt message={prompt} onClose={() => setPrompt("")} />
 
@@ -249,6 +267,7 @@ function Home() {
         onClose={() => setShowCreate(false)}
         onCreated={handlePostCreated}
         user={user}
+        localOnly={offline}
       />
     </div>
   );

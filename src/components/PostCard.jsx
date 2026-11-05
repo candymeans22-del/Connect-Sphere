@@ -1,6 +1,7 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Heart, MessageCircle, Bookmark, Send, MoreVertical, Trash2 } from "lucide-react";
+import { Heart, MessageCircle, Bookmark, Send, MoreVertical, Trash2, Pencil, Check } from "lucide-react";
 import api from "../services/api";
 import Avatar from "./Avatar";
 import CommentSection from "./CommentSection";
@@ -17,6 +18,7 @@ const chip =
   "flex items-center gap-2 px-4 py-2 rounded-full bg-white shadow text-sm font-medium";
 
 function PostCard({ post, index, currentUserId, onDelete, guest = false, onRequireLogin }) {
+  const navigate = useNavigate();
   const [liked, setLiked] = useState(post.likedByMe);
   const [likes, setLikes] = useState(post.likes);
   const [saved, setSaved] = useState(false);
@@ -24,13 +26,21 @@ function PostCard({ post, index, currentUserId, onDelete, guest = false, onRequi
   const [busy, setBusy] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [commentCount, setCommentCount] = useState(post.commentsCount || 0);
+  const [text, setText] = useState(post.text); // the post text (changes when edited)
+  const [edited, setEdited] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const author = post.author || { name: "Deleted user", username: "unknown" };
   const isOwn = post.author && post.author._id === currentUserId;
   const gradient = tagGradients[post.tag] || tagGradients.General;
 
   // Short text-only posts get a big "quote card" panel
-  const isQuote = !post.image && post.text.length <= 160;
+  const isQuote = !post.image && text.length <= 160;
+
+  // Sample posts (shown while the backend is not connected) are changed only on this page
+  const isSample = String(post._id).startsWith("sample-");
 
   const handleLike = async () => {
     if (guest) {
@@ -38,10 +48,11 @@ function PostCard({ post, index, currentUserId, onDelete, guest = false, onRequi
       return;
     }
     if (busy) return;
-    setBusy(true);
     const wasLiked = liked;
     setLiked(!wasLiked);
     setLikes((n) => n + (wasLiked ? -1 : 1));
+    if (isSample) return;
+    setBusy(true);
     try {
       const { data } = await api.put(`/posts/${post._id}/like`);
       setLiked(data.liked);
@@ -57,12 +68,51 @@ function PostCard({ post, index, currentUserId, onDelete, guest = false, onRequi
   const handleDelete = async () => {
     setMenuOpen(false);
     if (!window.confirm("Delete this post?")) return;
+    if (isSample) {
+      onDelete(post._id);
+      return;
+    }
     try {
       await api.delete(`/posts/${post._id}`);
       onDelete(post._id);
     } catch {
       alert("Could not delete the post. Please try again.");
     }
+  };
+
+  const startEdit = () => {
+    setMenuOpen(false);
+    setDraft(text);
+    setEditing(true);
+  };
+
+  const saveEdit = async () => {
+    const newText = draft.trim();
+    if (!newText) return;
+    if (!isSample) {
+      try {
+        await api.put(`/posts/${post._id}`, { text: newText });
+      } catch {
+        alert("Could not save your changes. Please try again.");
+        return;
+      }
+    }
+    setText(newText);
+    setEdited(true);
+    setEditing(false);
+  };
+
+  // Share = copy a link to this post
+  const handleShare = async () => {
+    const link = `${window.location.origin}/home?post=${post._id}`;
+    try {
+      await navigator.clipboard.writeText(link);
+    } catch {
+      window.prompt("Copy this link:", link);
+      return;
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -73,11 +123,13 @@ function PostCard({ post, index, currentUserId, onDelete, guest = false, onRequi
       transition={{ duration: 0.6, delay: Math.min(index, 4) * 0.08 }}
     >
       <div className="flex items-center gap-3 px-5 pt-5">
-        <Avatar name={author.name} size={44} />
+        <button onClick={() => navigate(`/profile/${author.username}`)}>
+          <Avatar name={author.name} size={44} />
+        </button>
         <div className="leading-tight min-w-0">
           <p className="text-sm font-semibold truncate">{author.name}</p>
           <p className="text-xs text-muted truncate">
-            @{author.username} Â· {timeAgo(post.createdAt)}
+            @{author.username} · {timeAgo(post.createdAt)}{edited ? " · edited" : ""}
           </p>
         </div>
 
@@ -96,6 +148,12 @@ function PostCard({ post, index, currentUserId, onDelete, guest = false, onRequi
             {menuOpen && (
               <div className="absolute right-0 mt-2 z-20 min-w-40 rounded-2xl bg-white shadow-xl p-1">
                 <button
+                  onClick={startEdit}
+                  className="flex items-center gap-2 w-full px-3 py-2 rounded-xl text-sm text-ink hover:bg-surface"
+                >
+                  <Pencil size={15} /> Edit post
+                </button>
+                <button
                   onClick={handleDelete}
                   className="flex items-center gap-2 w-full px-3 py-2 rounded-xl text-sm text-rose-deep hover:bg-petal"
                 >
@@ -113,20 +171,45 @@ function PostCard({ post, index, currentUserId, onDelete, guest = false, onRequi
         </div>
       )}
 
-      {isQuote ? (
+      {editing ? (
+        <div className="px-5 pt-4">
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            maxLength={1000}
+            rows={4}
+            autoFocus
+            className="w-full resize-none rounded-3xl bg-white p-4 text-sm outline-none ring-2 ring-primary-soft"
+          />
+          <div className="mt-2 flex justify-end gap-2">
+            <button
+              onClick={() => setEditing(false)}
+              className="px-4 py-1.5 rounded-full bg-white text-sm font-semibold shadow"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={saveEdit}
+              className="flex items-center gap-1 px-4 py-1.5 rounded-full bg-primary text-white text-sm font-semibold shadow"
+            >
+              <Check size={15} /> Save
+            </button>
+          </div>
+        </div>
+      ) : isQuote ? (
         <div
           className={`relative mt-4 mx-4 min-h-52 rounded-3xl overflow-hidden bg-linear-to-br ${gradient} flex items-center justify-center p-8`}
         >
           <span className="absolute -top-10 -right-8 w-40 h-40 rounded-full bg-white/25 blur-2xl" />
           <span className="absolute -bottom-12 -left-6 w-36 h-36 rounded-full bg-white/20 blur-2xl" />
-          <span className="absolute top-3 left-6 text-7xl leading-none text-white/40 font-serif">â€œ</span>
+          <span className="absolute top-3 left-6 text-7xl leading-none text-white/40 font-serif">“</span>
           <p className="relative text-center text-xl md:text-2xl font-medium italic text-white leading-snug break-words">
-            {post.text}
+            {text}
           </p>
         </div>
       ) : (
         <p className="px-5 pt-4 text-[15px] leading-relaxed whitespace-pre-wrap break-words">
-          {post.text}
+          {text}
         </p>
       )}
 
@@ -152,9 +235,10 @@ function PostCard({ post, index, currentUserId, onDelete, guest = false, onRequi
           <MessageCircle size={18} /> {commentCount}
         </motion.button>
 
-        <span className={`${chip} hidden sm:flex`}>
-          <Send size={18} />
-        </span>
+        <motion.button onClick={handleShare} whileTap={{ scale: 0.9 }} className={chip}>
+          {copied ? <Check size={18} className="text-primary" /> : <Send size={18} />}
+          {copied && <span className="text-xs">Link copied</span>}
+        </motion.button>
 
         <motion.button
           onClick={() => setSaved(!saved)}

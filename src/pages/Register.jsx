@@ -3,10 +3,13 @@ import { Link, useNavigate } from "react-router-dom";
 import { User, AtSign, Mail, Lock } from "lucide-react";
 import AuthLayout from "../components/AuthLayout";
 import InputField from "../components/InputField";
+import { useDispatch } from "react-redux";
 import api from "../services/api";
+import { loginSuccess } from "../store/AuthSlice";
 
 function Register() {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
   const [form, setForm] = useState({
     name: "",
     username: "",
@@ -25,8 +28,7 @@ function Register() {
     setLoading(true);
     try {
       const { data } = await api.post("/auth/register", form);
-      localStorage.setItem("token", data.token);
-      localStorage.setItem("user", JSON.stringify(data.user));
+      dispatch(loginSuccess({ token: data.token, user: data.user }));
       navigate("/home");
     } catch (err) {
       setError(err.response?.data?.message || "Could not reach the server. Is it running?");
